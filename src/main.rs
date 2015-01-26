@@ -4,6 +4,8 @@ trait BEncodable {
     fn to_benc (&self) -> String;
 }
 
+// String implementations.
+
 impl BEncodable for str {
     fn to_benc (&self) -> String {
         let l1 = self.len();
@@ -24,11 +26,15 @@ impl BEncodable for String {
     }
 }
 
+// Integer implementations.
+
 impl BEncodable for i64 {
     fn to_benc (&self) -> String {
         return format!("i{}e", self);
     }
 }
+
+// List implementations.
 
 impl<T: BEncodable> BEncodable for Vec<T> {
     fn to_benc (&self) -> String {
@@ -43,6 +49,22 @@ impl<T: BEncodable> BEncodable for Vec<T> {
         return tmp;
     }
 }
+
+impl<T: BEncodable> BEncodable for [T] {
+    fn to_benc (&self) -> String {
+        let mut tmp = String::from_str("l");
+
+        for b in self.iter() {
+            tmp.push_str(b.to_benc().as_slice());
+        }
+
+        tmp.push_str("e");
+
+        return tmp;
+    }
+}
+
+// Dictionary implementations.
 
 impl<'a, T: BEncodable> BEncodable for BTreeMap<&'a str, T> {
     fn to_benc(&self) -> String {
@@ -103,7 +125,24 @@ mod tests {
     }
 
 #[test]
+    fn test_array_to_benc() {
+        {
+            let ar = ["Hello,".to_string(),
+                      " ".to_string(),
+                      "World!".to_string()];
+            let ar_to_benc = "l6:Hello,1: 6:World!e";
+
+            assert_eq!(ar_to_benc, ar.to_benc());
+        }
+    }
+
+#[test]
     fn test_map_to_benc() {
+        {
+            let map : BTreeMap<&str, i64> = BTreeMap::new();
+
+            assert_eq!(map.to_benc(), "de");
+        }
         {
             let mut map : BTreeMap<&str, i64> = BTreeMap::new();
             map.insert("cow", 0);
