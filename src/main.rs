@@ -16,9 +16,29 @@ impl BEncodable for str {
     }
 }
 
+impl BEncodable for String {
+    fn to_benc (&self) -> String {
+        self.as_slice().to_benc()
+    }
+}
+
 impl BEncodable for i64 {
     fn to_benc (&self) -> String {
         return format!("i{}e", self);
+    }
+}
+
+impl<T: BEncodable> BEncodable for Vec<T> {
+    fn to_benc (&self) -> String {
+        let mut tmp = String::from_str("l");
+
+        for b in self.iter() {
+            tmp.push_str(b.to_benc().as_slice());
+        }
+
+        tmp.push_str("e");
+
+        return tmp;
     }
 }
 
@@ -42,5 +62,21 @@ mod tests {
         assert_eq!("i1e", 1.to_benc());
         assert_eq!("i1000e", 1000.to_benc());
         assert_eq!("i-1e", (-1).to_benc());
+    }
+
+#[test]
+    fn test_vec_to_benc() {
+        {
+            let xs : Vec<i64> = vec![0,1,2,3];
+            assert_eq!("li0ei1ei2ei3ee", xs.to_benc()); 
+        }
+        {
+            let xs = vec!["Hello,".to_string(),
+                          " ".to_string(),
+                          "World!".to_string()];
+            let xs_to_benc = "l6:Hello,1: 6:World!e";
+
+            assert_eq!(xs_to_benc, xs.to_benc());
+        }
     }
 }
