@@ -1,0 +1,5 @@
+[package]
+
+name = "bencoding"
+version = "0.0.1"
+authors = ["Patrick Lambein"]
