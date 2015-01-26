@@ -1,9 +1,9 @@
 trait BEncodable {
-    fn to_benc(self) -> String;
+    fn to_benc (&self) -> String;
 }
 
-impl<'a> BEncodable for &'a str {
-    fn to_benc (self) -> String {
+impl BEncodable for str {
+    fn to_benc (&self) -> String {
         let l1 = self.len();
         let tmp = format!("{}:", l1);
         let l2 = tmp.len();
@@ -17,7 +17,7 @@ impl<'a> BEncodable for &'a str {
 }
 
 impl BEncodable for i64 {
-    fn to_benc (self) -> String {
+    fn to_benc (&self) -> String {
         return format!("i{}e", self);
     }
 }
