@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 trait BEncodable {
     fn to_benc (&self) -> String;
 }
@@ -42,6 +44,21 @@ impl<T: BEncodable> BEncodable for Vec<T> {
     }
 }
 
+impl<'a, T: BEncodable> BEncodable for BTreeMap<&'a str, T> {
+    fn to_benc(&self) -> String {
+        let mut tmp = String::from_str("d");
+
+        for (key, value) in self.iter() {
+            tmp.push_str(key.to_benc().as_slice());
+            tmp.push_str(value.to_benc().as_slice());
+        }
+
+        tmp.push_str("e");
+
+        return tmp;
+    }
+}
+
 fn main() {
     println!("Hello, world!");
 }
@@ -49,6 +66,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::BEncodable;
+    use std::collections::BTreeMap;
 
 #[test]
     fn test_str_to_benc() {
@@ -67,6 +85,10 @@ mod tests {
 #[test]
     fn test_vec_to_benc() {
         {
+            let xs : Vec<i64> = Vec::new();
+            assert_eq!("le", xs.to_benc());
+        }
+        {
             let xs : Vec<i64> = vec![0,1,2,3];
             assert_eq!("li0ei1ei2ei3ee", xs.to_benc()); 
         }
@@ -77,6 +99,19 @@ mod tests {
             let xs_to_benc = "l6:Hello,1: 6:World!e";
 
             assert_eq!(xs_to_benc, xs.to_benc());
+        }
+    }
+
+#[test]
+    fn test_map_to_benc() {
+        {
+            let mut map : BTreeMap<&str, i64> = BTreeMap::new();
+            map.insert("cow", 0);
+            map.insert("dus", 10000);
+
+            let map_to_benc = "d3:cowi0e3:dusi10000ee";
+
+            assert_eq!(map.to_benc(), map_to_benc);
         }
     }
 }
