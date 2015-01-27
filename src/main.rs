@@ -1,5 +1,15 @@
 use std::collections::BTreeMap;
 
+enum Benc<'a> {
+    S (String),
+    I (i64),
+    L (BList<'a>),
+    D (BDict<'a>)
+}
+
+type BList<'a> = Vec<Benc<'a>>;
+type BDict<'a> = BTreeMap<&'a str, Benc<'a>>;
+
 trait BEncodable {
     fn to_benc (&self) -> String;
 }
@@ -35,6 +45,12 @@ impl BEncodable for i64 {
 }
 
 // List implementations.
+
+// TODO: find a way to factorise duplicate code.
+//       This should be doable with a function that operates on an
+//       Iterator rather than on specific types, but at the moment I can't
+//       find how to specify something like
+//       impl<T: BEncodable> for Iterator<T>
 
 impl<T: BEncodable> BEncodable for Vec<T> {
     fn to_benc (&self) -> String {
@@ -81,6 +97,21 @@ impl<'a, T: BEncodable> BEncodable for BTreeMap<&'a str, T> {
     }
 }
 
+// BEnc implementations
+
+impl<'a> BEncodable for Benc<'a> {
+    fn to_benc(&self) -> String {
+        match *self {
+            Benc::S(ref s) => s.to_benc(),
+            Benc::I(ref i) => i.to_benc(),
+            Benc::L(ref l) => l.to_benc(),
+            Benc::D(ref d) => d.to_benc(),
+        }
+    }
+}
+
+// Decoding
+
 fn main() {
     println!("Hello, world!");
 }
@@ -89,6 +120,7 @@ fn main() {
 mod tests {
     use super::BEncodable;
     use std::collections::BTreeMap;
+    use super::Benc;
 
 #[test]
     fn test_str_to_benc() {
@@ -151,6 +183,14 @@ mod tests {
             let map_to_benc = "d3:cowi0e3:dusi10000ee";
 
             assert_eq!(map.to_benc(), map_to_benc);
+        }
+    }
+
+#[test]
+    fn test_Benc_to_benc() {
+        {
+            let b = Benc::S("Hello".to_string());
+            assert_eq!(b.to_benc(), "5:Hello");
         }
     }
 }
