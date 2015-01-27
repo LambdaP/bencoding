@@ -11,13 +11,13 @@ type BList<'a> = Vec<Benc<'a>>;
 type BDict<'a> = BTreeMap<&'a str, Benc<'a>>;
 
 trait BEncodable {
-    fn to_benc (&self) -> String;
+    fn serialize (&self) -> String;
 }
 
 // String implementations.
 
 impl BEncodable for str {
-    fn to_benc (&self) -> String {
+    fn serialize (&self) -> String {
         let l1 = self.len();
         let tmp = format!("{}:", l1);
         let l2 = tmp.len();
@@ -31,15 +31,15 @@ impl BEncodable for str {
 }
 
 impl BEncodable for String {
-    fn to_benc (&self) -> String {
-        self.as_slice().to_benc()
+    fn serialize (&self) -> String {
+        self.as_slice().serialize()
     }
 }
 
 // Integer implementations.
 
 impl BEncodable for i64 {
-    fn to_benc (&self) -> String {
+    fn serialize (&self) -> String {
         return format!("i{}e", self);
     }
 }
@@ -53,11 +53,11 @@ impl BEncodable for i64 {
 //       impl<T: BEncodable> for Iterator<T>
 
 impl<T: BEncodable> BEncodable for Vec<T> {
-    fn to_benc (&self) -> String {
+    fn serialize (&self) -> String {
         let mut tmp = String::from_str("l");
 
         for b in self.iter() {
-            tmp.push_str(b.to_benc().as_slice());
+            tmp.push_str(b.serialize().as_slice());
         }
 
         tmp.push_str("e");
@@ -67,11 +67,11 @@ impl<T: BEncodable> BEncodable for Vec<T> {
 }
 
 impl<T: BEncodable> BEncodable for [T] {
-    fn to_benc (&self) -> String {
+    fn serialize (&self) -> String {
         let mut tmp = String::from_str("l");
 
         for b in self.iter() {
-            tmp.push_str(b.to_benc().as_slice());
+            tmp.push_str(b.serialize().as_slice());
         }
 
         tmp.push_str("e");
@@ -83,12 +83,12 @@ impl<T: BEncodable> BEncodable for [T] {
 // Dictionary implementations.
 
 impl<'a, T: BEncodable> BEncodable for BTreeMap<&'a str, T> {
-    fn to_benc(&self) -> String {
+    fn serialize(&self) -> String {
         let mut tmp = String::from_str("d");
 
         for (key, value) in self.iter() {
-            tmp.push_str(key.to_benc().as_slice());
-            tmp.push_str(value.to_benc().as_slice());
+            tmp.push_str(key.serialize().as_slice());
+            tmp.push_str(value.serialize().as_slice());
         }
 
         tmp.push_str("e");
@@ -100,12 +100,12 @@ impl<'a, T: BEncodable> BEncodable for BTreeMap<&'a str, T> {
 // BEnc implementations
 
 impl<'a> BEncodable for Benc<'a> {
-    fn to_benc(&self) -> String {
+    fn serialize(&self) -> String {
         match *self {
-            Benc::S(ref s) => s.to_benc(),
-            Benc::I(ref i) => i.to_benc(),
-            Benc::L(ref l) => l.to_benc(),
-            Benc::D(ref d) => d.to_benc(),
+            Benc::S(ref s) => s.serialize(),
+            Benc::I(ref i) => i.serialize(),
+            Benc::L(ref l) => l.serialize(),
+            Benc::D(ref d) => d.serialize(),
         }
     }
 }
@@ -123,74 +123,74 @@ mod tests {
     use super::Benc;
 
 #[test]
-    fn test_str_to_benc() {
-        assert_eq!("0:", "".to_benc());
-        assert_eq!("4:test", "test".to_benc());
+    fn test_str_serialize() {
+        assert_eq!("0:", "".serialize());
+        assert_eq!("4:test", "test".serialize());
     }
 
 #[test]
-    fn test_i64_to_benc() {
-        assert_eq!("i0e", 0.to_benc());
-        assert_eq!("i1e", 1.to_benc());
-        assert_eq!("i1000e", 1000.to_benc());
-        assert_eq!("i-1e", (-1).to_benc());
+    fn test_i64_serialize() {
+        assert_eq!("i0e", 0.serialize());
+        assert_eq!("i1e", 1.serialize());
+        assert_eq!("i1000e", 1000.serialize());
+        assert_eq!("i-1e", (-1).serialize());
     }
 
 #[test]
-    fn test_vec_to_benc() {
+    fn test_vec_serialize() {
         {
             let xs : Vec<i64> = Vec::new();
-            assert_eq!("le", xs.to_benc());
+            assert_eq!("le", xs.serialize());
         }
         {
             let xs : Vec<i64> = vec![0,1,2,3];
-            assert_eq!("li0ei1ei2ei3ee", xs.to_benc()); 
+            assert_eq!("li0ei1ei2ei3ee", xs.serialize()); 
         }
         {
             let xs = vec!["Hello,".to_string(),
                           " ".to_string(),
                           "World!".to_string()];
-            let xs_to_benc = "l6:Hello,1: 6:World!e";
+            let xs_serialize = "l6:Hello,1: 6:World!e";
 
-            assert_eq!(xs_to_benc, xs.to_benc());
+            assert_eq!(xs_serialize, xs.serialize());
         }
     }
 
 #[test]
-    fn test_array_to_benc() {
+    fn test_array_serialize() {
         {
             let ar = ["Hello,".to_string(),
                       " ".to_string(),
                       "World!".to_string()];
-            let ar_to_benc = "l6:Hello,1: 6:World!e";
+            let ar_serialize = "l6:Hello,1: 6:World!e";
 
-            assert_eq!(ar_to_benc, ar.to_benc());
+            assert_eq!(ar_serialize, ar.serialize());
         }
     }
 
 #[test]
-    fn test_map_to_benc() {
+    fn test_map_serialize() {
         {
             let map : BTreeMap<&str, i64> = BTreeMap::new();
 
-            assert_eq!(map.to_benc(), "de");
+            assert_eq!(map.serialize(), "de");
         }
         {
             let mut map : BTreeMap<&str, i64> = BTreeMap::new();
             map.insert("cow", 0);
             map.insert("dus", 10000);
 
-            let map_to_benc = "d3:cowi0e3:dusi10000ee";
+            let map_serialize = "d3:cowi0e3:dusi10000ee";
 
-            assert_eq!(map.to_benc(), map_to_benc);
+            assert_eq!(map.serialize(), map_serialize);
         }
     }
 
 #[test]
-    fn test_Benc_to_benc() {
+    fn test_Benc_serialize() {
         {
             let b = Benc::S("Hello".to_string());
-            assert_eq!(b.to_benc(), "5:Hello");
+            assert_eq!(b.serialize(), "5:Hello");
         }
     }
 }
