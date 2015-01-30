@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 enum Benc<'a> {
+    Nil,
     S (String),
     I (i64),
     L (BList<'a>),
@@ -102,6 +103,8 @@ impl<'a, T: BEncodable> BEncodable for BTreeMap<&'a str, T> {
 impl<'a> BEncodable for Benc<'a> {
     fn serialize(&self) -> String {
         match *self {
+            // TODO: replace "".serialize() with empty list.
+            Benc::Nil      => "".serialize(),
             Benc::S(ref s) => s.serialize(),
             Benc::I(ref i) => i.serialize(),
             Benc::L(ref l) => l.serialize(),
@@ -113,7 +116,12 @@ impl<'a> BEncodable for Benc<'a> {
 // Decoding
 
 fn main() {
-    println!("Hello, world!");
+    let s = "Hello, world!";
+    let l = s.bytes().next();
+    match l {
+        Some(y) => println!("{}", y),
+        None => println!("None")
+    }
 }
 
 #[cfg(test)]
@@ -126,6 +134,8 @@ mod tests {
     fn test_str_serialize() {
         assert_eq!("0:", "".serialize());
         assert_eq!("4:test", "test".serialize());
+        assert_eq!("15:ohmygodwhoisshe",
+                "ohmygodwhoisshe".serialize());
     }
 
 #[test]
@@ -148,8 +158,8 @@ mod tests {
         }
         {
             let xs = vec!["Hello,".to_string(),
-                          " ".to_string(),
-                          "World!".to_string()];
+                " ".to_string(),
+                "World!".to_string()];
             let xs_serialize = "l6:Hello,1: 6:World!e";
 
             assert_eq!(xs_serialize, xs.serialize());
@@ -160,8 +170,8 @@ mod tests {
     fn test_array_serialize() {
         {
             let ar = ["Hello,".to_string(),
-                      " ".to_string(),
-                      "World!".to_string()];
+                " ".to_string(),
+                "World!".to_string()];
             let ar_serialize = "l6:Hello,1: 6:World!e";
 
             assert_eq!(ar_serialize, ar.serialize());
