@@ -3,3 +3,7 @@
 name = "bencoding"
 version = "0.0.1"
 authors = ["Patrick Lambein"]
+
+[dependencies.angstrom]
+
+git = "https://github.com/LambdaP/Angstrom"
