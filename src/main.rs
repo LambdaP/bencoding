@@ -1,4 +1,7 @@
+extern crate angstrom;
 use std::collections::BTreeMap;
+use angstrom::base::*;
+use angstrom::bytes::*;
 
 enum Benc<'a> {
     Nil,
@@ -113,15 +116,19 @@ impl<'a> BEncodable for Benc<'a> {
     }
 }
 
-// Decoding
+fn parse_bencoded_string<'a>() -> Parser<'a, u8, Vec<u8>> {
+    fn temp<'a>(n: i32) -> Parser<'a, u8, Vec<u8>> {
+        parser_ignore_first(exactly(58),
+                   parser_ntimes(n, any()))
+    }
+
+    let p = parser_i32();
+
+    parser_bind(p, temp)
+}
 
 fn main() {
-    let s = "Hello, world!";
-    let l = s.bytes().next();
-    match l {
-        Some(y) => println!("{}", y),
-        None => println!("None")
-    }
+    println!("Hello, world!");
 }
 
 #[cfg(test)]
@@ -129,6 +136,7 @@ mod tests {
     use super::BEncodable;
     use std::collections::BTreeMap;
     use super::Benc;
+    use super::*;
 
 #[test]
     fn test_str_serialize() {
@@ -154,7 +162,7 @@ mod tests {
         }
         {
             let xs : Vec<i64> = vec![0,1,2,3];
-            assert_eq!("li0ei1ei2ei3ee", xs.serialize()); 
+            assert_eq!("li0ei1ei2ei3ee", xs.serialize());
         }
         {
             let xs = vec!["Hello,".to_string(),
@@ -201,6 +209,53 @@ mod tests {
         {
             let b = Benc::S("Hello".to_string());
             assert_eq!(b.serialize(), "5:Hello");
+        }
+    }
+
+#[test]
+    fn test_parse_bencoded_string() {
+        {
+            let parser = super::parse_bencoded_string();
+
+            let slice1 = &[52, 58, 0, 1, 2, 3];
+            let result = &[0, 1, 2, 3];
+
+            match parser.parse(slice1) {
+                None => assert!(false),
+                     Some(v) => assert_eq!(v, result.to_vec())
+            }
+
+            let slice2 = &[0, 58, 0, 1, 2, 3];
+            let slice3 = &[58, 1, 2, 3];
+            let slice4 = &[52, 58, 0, 1, 2];
+            let slice5 = &[52, 58, 0, 1, 2, 3, 4];
+
+            assert_eq!(parser.parse(slice2), None);
+            assert_eq!(parser.parse(slice3), None);
+            assert_eq!(parser.parse(slice4), None);
+            assert_eq!(parser.parse(slice5), None);
+        }
+        {
+            let parser = super::parse_bencoded_string();
+
+            let slice1 = &[49, 58, 0];
+            let result = &[0];
+
+            match parser.parse(slice1) {
+                None => assert!(false),
+                     Some(v) => assert_eq!(v, result.to_vec())
+            }
+        }
+        {
+            let parser = super::parse_bencoded_string();
+
+            let slice1 = &[48, 58];
+            let result = &[];
+
+            match parser.parse(slice1) {
+                None => assert!(false),
+                     Some(v) => assert_eq!(v, result.to_vec())
+            }
         }
     }
 }
