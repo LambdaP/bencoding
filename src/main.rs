@@ -3,6 +3,9 @@ use std::collections::BTreeMap;
 use angstrom::base::*;
 use angstrom::bytes::*;
 
+#[derive(PartialEq)]
+#[derive(Debug)]
+#[derive(Clone)]
 enum Benc<'a> {
     Nil,
     S (String),
@@ -125,15 +128,42 @@ fn u8_to_benc<'a>(v: Vec<u8>) -> Benc<'a> {
     }
 }
 
+fn parse_u8_to_benc<'a>() -> Parser<'a, u8, Benc<'a>> {
+    let p = parser_i64();
+    let inbetween = parser_apply(p, Benc::I);
+    let open = exactly(b'i');
+    let close = exactly(b'e');
+
+    parser_between(open, close, inbetween)
+}
+
 fn parse_bencoded_string<'a>() -> Parser<'a, u8, Vec<u8>> {
-    fn temp<'a>(n: i32) -> Parser<'a, u8, Vec<u8>> {
-        parser_ignore_first(exactly(58),
+    fn temp<'a>(n: i64) -> Parser<'a, u8, Vec<u8>> {
+        parser_ignore_first(exactly(b':'),
                    parser_ntimes(n, any()))
     }
 
-    let p = parser_i32();
+    let p = parser_i64();
 
     parser_bind(p, temp)
+}
+
+fn parse_bencoded_list<'a>
+                      (p: Parser<'a, u8, Benc<'a>>)
+                         -> Parser<'a, u8, Benc<'a>> {
+    let open = exactly(b'l');
+    let close = exactly(b'e');
+
+    fn temp<'a>(v: Vec<Benc>) -> Benc {
+        match v.len() {
+            0 => Benc::Nil,
+            _ => Benc::L(v)
+        }
+    };
+
+    let inbetween = parser_apply(parser_many(p), temp);
+
+    parser_between(open, close, inbetween)
 }
 
 fn parse_string_to_benc<'a> () -> Parser<'a, u8, Benc<'a>> {
@@ -152,6 +182,7 @@ mod tests {
     use std::collections::BTreeMap;
     use super::Benc;
     use super::*;
+    use angstrom::base::*;
 
 #[test]
     fn test_str_serialize() {
@@ -220,7 +251,7 @@ mod tests {
     }
 
 #[test]
-    fn test_Benc_serialize() {
+    fn test_benc_serialize() {
         {
             let b = Benc::S("Hello".to_string());
             assert_eq!(b.serialize(), "5:Hello");
@@ -284,6 +315,82 @@ mod tests {
         match parser.parse(slice1) {
             Some(Benc::S(x)) => assert_eq!(x, result),
             _ => assert!(false)
+        }
+    }
+
+#[test]
+    fn test_parse_u8_to_benc() {
+        let parser = super::parse_u8_to_benc();
+
+        let slice1 = b"i0e";
+        let slice2 = b"i777e";
+        let slice3 = b"i1234567890e";
+
+        match parser.parse(slice1) {
+            Some(Benc::I(x)) => assert_eq!(x, 0),
+            _ => assert!(false)
+        }
+        match parser.parse(slice2) {
+            Some(Benc::I(x)) => assert_eq!(x, 777),
+            _ => assert!(false)
+        }
+        match parser.parse(slice3) {
+            Some(Benc::I(x)) => assert_eq!(x, 1234567890),
+            _ => assert!(false)
+        }
+
+        let slice4 = b"ie";
+        let slice5 = b"i01e";
+        let slice6 = b"5:Hello";
+
+        assert_eq!(parser.parse(slice4), None);
+        assert_eq!(parser.parse(slice5), None);
+        assert_eq!(parser.parse(slice6), None);
+    }
+
+#[test]
+    fn test_parse_bencoded_list() {
+        {
+            let parser
+                = super::parse_bencoded_list(super::parse_u8_to_benc());
+
+            let slice1 = b"le";
+            let slice2 = b"li0ee";
+            let slice3 = b"li0ei1ei2ee";
+
+            let result2 = vec![Benc::I(0)];
+            let result3 = vec![Benc::I(0), Benc::I(1), Benc::I(2)];
+
+            match parser.parse(slice1) {
+                Some(Benc::Nil) => assert!(true),
+                    _ => assert!(false)
+            }
+            match parser.parse(slice2) {
+                Some(Benc::L(v)) => assert_eq!(v, result2),
+                    _ => assert!(false)
+            }
+            match parser.parse(slice3) {
+                Some(Benc::L(v)) => assert_eq!(v, result3),
+                    _ => assert!(false)
+            }
+
+            // TODO: add failing tests.
+        }
+        {
+            let parser
+                = super::parse_bencoded_list(super::parse_string_to_benc());
+
+            assert!(true);
+
+            let slice1 = b"l5:Hello6:World!e";
+
+            let result1 = vec![Benc::S("Hello".to_string()),
+                                Benc::S("World!".to_string())];
+
+            match parser.parse(slice1) {
+                Some(Benc::L(v)) => assert_eq!(v, result1),
+                _ => assert!(false)
+            }
         }
     }
 }
