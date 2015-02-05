@@ -116,6 +116,15 @@ impl<'a> BEncodable for Benc<'a> {
     }
 }
 
+fn u8_to_benc<'a>(v: Vec<u8>) -> Benc<'a> {
+    let s = String::from_utf8(v).unwrap();
+
+    match s.len() {
+        0 => Benc::Nil,
+        _ => Benc::S(s)
+    }
+}
+
 fn parse_bencoded_string<'a>() -> Parser<'a, u8, Vec<u8>> {
     fn temp<'a>(n: i32) -> Parser<'a, u8, Vec<u8>> {
         parser_ignore_first(exactly(58),
@@ -125,6 +134,12 @@ fn parse_bencoded_string<'a>() -> Parser<'a, u8, Vec<u8>> {
     let p = parser_i32();
 
     parser_bind(p, temp)
+}
+
+fn parse_string_to_benc<'a> () -> Parser<'a, u8, Benc<'a>> {
+    let p = parse_bencoded_string();
+
+    parser_apply(p, u8_to_benc)
 }
 
 fn main() {
@@ -217,8 +232,8 @@ mod tests {
         {
             let parser = super::parse_bencoded_string();
 
-            let slice1 = &[52, 58, 0, 1, 2, 3];
-            let result = &[0, 1, 2, 3];
+            let slice1 = b"5:Hello";
+            let result = b"Hello";
 
             match parser.parse(slice1) {
                 None => assert!(false),
@@ -226,9 +241,9 @@ mod tests {
             }
 
             let slice2 = &[0, 58, 0, 1, 2, 3];
-            let slice3 = &[58, 1, 2, 3];
-            let slice4 = &[52, 58, 0, 1, 2];
-            let slice5 = &[52, 58, 0, 1, 2, 3, 4];
+            let slice3 = b":Hello";
+            let slice4 = b"5:Hell";
+            let slice5 = b"5:Hello World!";
 
             assert_eq!(parser.parse(slice2), None);
             assert_eq!(parser.parse(slice3), None);
@@ -238,8 +253,8 @@ mod tests {
         {
             let parser = super::parse_bencoded_string();
 
-            let slice1 = &[49, 58, 0];
-            let result = &[0];
+            let slice1 = b"1:H";
+            let result = b"H";
 
             match parser.parse(slice1) {
                 None => assert!(false),
@@ -249,13 +264,26 @@ mod tests {
         {
             let parser = super::parse_bencoded_string();
 
-            let slice1 = &[48, 58];
-            let result = &[];
+            let slice1 = b"0:";
+            let result = b"";
 
             match parser.parse(slice1) {
                 None => assert!(false),
                      Some(v) => assert_eq!(v, result.to_vec())
             }
+        }
+    }
+
+#[test]
+    fn test_parse_string_to_benc() {
+        let slice1 = b"5:Hello";
+        let result = "Hello";
+
+        let parser = super::parse_string_to_benc();
+
+        match parser.parse(slice1) {
+            Some(Benc::S(x)) => assert_eq!(x, result),
+            _ => assert!(false)
         }
     }
 }
