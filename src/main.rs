@@ -11,17 +11,34 @@ enum Benc<'a> {
     S (String),
     I (i64),
     L (BList<'a>),
+    // TODO: These should be sorted by binary values of the keys. For now,
+    //       it is unsorted.
     D (BDict<'a>)
 }
 
 type BList<'a> = Vec<Benc<'a>>;
-type BDict<'a> = BTreeMap<&'a str, Benc<'a>>;
+type BDict<'a> = BTreeMap<Vec<u8>, Benc<'a>>;
 
 trait BEncodable {
     fn serialize (&self) -> String;
 }
 
 // String implementations.
+
+impl BEncodable for [u8] {
+    fn serialize (&self) -> String {
+        String::from_utf8(self.to_vec()).unwrap().serialize()
+    }
+}
+
+impl BEncodable for Vec<u8> {
+    fn serialize (&self) -> String {
+        // String::from_ut8 takes its argument by value and using it here
+        // would create ownership problems. This is the stupid way to do
+        // it (and there certainly is a more idiomatic way to do it).
+        self.as_slice().serialize()
+    }
+}
 
 impl BEncodable for str {
     fn serialize (&self) -> String {
@@ -53,7 +70,7 @@ impl BEncodable for i64 {
 
 // List implementations.
 
-// TODO: find a way to factorise duplicate code.
+// TODO: find a way to factor duplicate code.
 //       This should be doable with a function that operates on an
 //       Iterator rather than on specific types, but at the moment I can't
 //       find how to specify something like
@@ -89,7 +106,7 @@ impl<T: BEncodable> BEncodable for [T] {
 
 // Dictionary implementations.
 
-impl<'a, T: BEncodable> BEncodable for BTreeMap<&'a str, T> {
+impl<'a, T: BEncodable> BEncodable for BTreeMap<Vec<u8>, T> {
     fn serialize(&self) -> String {
         let mut tmp = String::from_str("d");
 
@@ -128,9 +145,9 @@ fn u8_to_benc<'a>(v: Vec<u8>) -> Benc<'a> {
     }
 }
 
-fn parse_u8_to_benc<'a>() -> Parser<'a, u8, Benc<'a>> {
+fn parse_i64_to_benc<'a>() -> Parser<'a, u8, Benc<'a>> {
     let p = parser_i64();
-    let inbetween = parser_apply(p, Benc::I);
+    let inbetween = parser_lift(Benc::I, p);
     let open = exactly(b'i');
     let close = exactly(b'e');
 
@@ -148,9 +165,8 @@ fn parse_bencoded_string<'a>() -> Parser<'a, u8, Vec<u8>> {
     parser_bind(p, temp)
 }
 
-fn parse_bencoded_list<'a>
-                      (p: Parser<'a, u8, Benc<'a>>)
-                         -> Parser<'a, u8, Benc<'a>> {
+fn parse_bencoded_list<'a>(p: Parser<'a, u8, Benc<'a>>)
+                            -> Parser<'a, u8, Benc<'a>> {
     let open = exactly(b'l');
     let close = exactly(b'e');
 
@@ -161,15 +177,41 @@ fn parse_bencoded_list<'a>
         }
     };
 
-    let inbetween = parser_apply(parser_many(p), temp);
+    let inbetween = parser_lift(temp, parser_many(p));
 
     parser_between(open, close, inbetween)
 }
 
-fn parse_string_to_benc<'a> () -> Parser<'a, u8, Benc<'a>> {
+fn pair_vect_to_benc<'a>(v: Vec<(Vec<u8>, Benc<'a>)>) -> Benc<'a> {
+    let mut dict : BDict<'a> = BTreeMap::new();
+
+    for (key, val) in v.into_iter() {
+        dict.insert(key, val);
+    }
+
+    Benc::D(dict)
+}
+
+fn parse_dictionary_pair<'a>(p: Parser<'a, u8, Benc<'a>>)
+                                -> Parser<'a, u8, Benc<'a>> {
+    parser_lift(pair_vect_to_benc,
+                parser_many(parser_and(parse_bencoded_string(), p)))
+}
+
+fn parse_bencoded_dictionary<'a>(p: Parser<'a, u8, Benc<'a>>)
+                                    -> Parser<'a, u8, Benc<'a>> {
+    let open = exactly(b'd');
+    let close = exactly(b'e');
+
+    let inbetween = parse_dictionary_pair(p);
+
+    parser_between(open, close, inbetween)
+}
+
+fn parse_string_to_benc<'a>() -> Parser<'a, u8, Benc<'a>> {
     let p = parse_bencoded_string();
 
-    parser_apply(p, u8_to_benc)
+    parser_lift(u8_to_benc, p)
 }
 
 fn main() {
@@ -235,14 +277,14 @@ mod tests {
 #[test]
     fn test_map_serialize() {
         {
-            let map : BTreeMap<&str, i64> = BTreeMap::new();
+            let map : BTreeMap<Vec<u8>, i64> = BTreeMap::new();
 
             assert_eq!(map.serialize(), "de");
         }
         {
-            let mut map : BTreeMap<&str, i64> = BTreeMap::new();
-            map.insert("cow", 0);
-            map.insert("dus", 10000);
+            let mut map : BTreeMap<Vec<u8>, i64> = BTreeMap::new();
+            map.insert(b"cow".to_vec(), 0);
+            map.insert(b"dus".to_vec(), 10000);
 
             let map_serialize = "d3:cowi0e3:dusi10000ee";
 
@@ -320,7 +362,7 @@ mod tests {
 
 #[test]
     fn test_parse_u8_to_benc() {
-        let parser = super::parse_u8_to_benc();
+        let parser = super::parse_i64_to_benc();
 
         let slice1 = b"i0e";
         let slice2 = b"i777e";
@@ -352,7 +394,7 @@ mod tests {
     fn test_parse_bencoded_list() {
         {
             let parser
-                = super::parse_bencoded_list(super::parse_u8_to_benc());
+                = super::parse_bencoded_list(super::parse_i64_to_benc());
 
             let slice1 = b"le";
             let slice2 = b"li0ee";
@@ -391,6 +433,24 @@ mod tests {
                 Some(Benc::L(v)) => assert_eq!(v, result1),
                 _ => assert!(false)
             }
+        }
+    }
+
+#[test]
+    fn test_parse_bencoded_dictionary() {
+        let parser
+            = super::parse_bencoded_dictionary(super::parse_i64_to_benc());
+
+        let slice1 = b"d1:Ai1e1:Bi2e1:Ci3ee";
+
+        let mut result1 : BTreeMap<Vec<u8>, Benc> = BTreeMap::new();
+        result1.insert(b"A".to_vec(), Benc::I(1));
+        result1.insert(b"B".to_vec(), Benc::I(2));
+        result1.insert(b"C".to_vec(), Benc::I(3));
+
+        match parser.parse(slice1) {
+            Some(Benc::D(d)) => assert_eq!(d, result1),
+            _ => assert!(false)
         }
     }
 }
