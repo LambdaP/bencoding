@@ -6,7 +6,7 @@ use angstrom::bytes::*;
 #[derive(PartialEq)]
 #[derive(Debug)]
 #[derive(Clone)]
-enum Benc<'a> {
+pub enum Benc<'a> {
     Nil,
     S (String),
     I (i64),
@@ -16,32 +16,32 @@ enum Benc<'a> {
     D (BDict<'a>)
 }
 
-type BList<'a> = Vec<Benc<'a>>;
-type BDict<'a> = BTreeMap<Vec<u8>, Benc<'a>>;
+pub type BList<'a> = Vec<Benc<'a>>;
+pub type BDict<'a> = BTreeMap<Vec<u8>, Benc<'a>>;
 
-trait BEncodable {
-    fn serialize (&self) -> String;
+pub trait BEncodable {
+    fn benc_encode (&self) -> String;
 }
 
 // String implementations.
 
 impl BEncodable for [u8] {
-    fn serialize (&self) -> String {
-        String::from_utf8(self.to_vec()).unwrap().serialize()
+    fn benc_encode (&self) -> String {
+        String::from_utf8(self.to_vec()).unwrap().benc_encode()
     }
 }
 
 impl BEncodable for Vec<u8> {
-    fn serialize (&self) -> String {
+    fn benc_encode (&self) -> String {
         // String::from_ut8 takes its argument by value and using it here
         // would create ownership problems. This is the stupid way to do
         // it (and there certainly is a more idiomatic way to do it).
-        self.as_slice().serialize()
+        self.as_slice().benc_encode()
     }
 }
 
 impl BEncodable for str {
-    fn serialize (&self) -> String {
+    fn benc_encode (&self) -> String {
         let l1 = self.len();
         let tmp = format!("{}:", l1);
         let l2 = tmp.len();
@@ -55,15 +55,15 @@ impl BEncodable for str {
 }
 
 impl BEncodable for String {
-    fn serialize (&self) -> String {
-        self.as_slice().serialize()
+    fn benc_encode (&self) -> String {
+        self.as_slice().benc_encode()
     }
 }
 
 // Integer implementations.
 
 impl BEncodable for i64 {
-    fn serialize (&self) -> String {
+    fn benc_encode (&self) -> String {
         return format!("i{}e", self);
     }
 }
@@ -77,11 +77,11 @@ impl BEncodable for i64 {
 //       impl<T: BEncodable> for Iterator<T>
 
 impl<T: BEncodable> BEncodable for Vec<T> {
-    fn serialize (&self) -> String {
+    fn benc_encode (&self) -> String {
         let mut tmp = String::from_str("l");
 
         for b in self.iter() {
-            tmp.push_str(b.serialize().as_slice());
+            tmp.push_str(b.benc_encode().as_slice());
         }
 
         tmp.push_str("e");
@@ -91,11 +91,11 @@ impl<T: BEncodable> BEncodable for Vec<T> {
 }
 
 impl<T: BEncodable> BEncodable for [T] {
-    fn serialize (&self) -> String {
+    fn benc_encode (&self) -> String {
         let mut tmp = String::from_str("l");
 
         for b in self.iter() {
-            tmp.push_str(b.serialize().as_slice());
+            tmp.push_str(b.benc_encode().as_slice());
         }
 
         tmp.push_str("e");
@@ -107,12 +107,12 @@ impl<T: BEncodable> BEncodable for [T] {
 // Dictionary implementations.
 
 impl<'a, T: BEncodable> BEncodable for BTreeMap<Vec<u8>, T> {
-    fn serialize(&self) -> String {
+    fn benc_encode(&self) -> String {
         let mut tmp = String::from_str("d");
 
         for (key, value) in self.iter() {
-            tmp.push_str(key.serialize().as_slice());
-            tmp.push_str(value.serialize().as_slice());
+            tmp.push_str(key.benc_encode().as_slice());
+            tmp.push_str(value.benc_encode().as_slice());
         }
 
         tmp.push_str("e");
@@ -124,14 +124,14 @@ impl<'a, T: BEncodable> BEncodable for BTreeMap<Vec<u8>, T> {
 // BEnc implementations
 
 impl<'a> BEncodable for Benc<'a> {
-    fn serialize(&self) -> String {
+    fn benc_encode(&self) -> String {
         match *self {
-            // TODO: replace "".serialize() with empty list.
-            Benc::Nil      => "".serialize(),
-            Benc::S(ref s) => s.serialize(),
-            Benc::I(ref i) => i.serialize(),
-            Benc::L(ref l) => l.serialize(),
-            Benc::D(ref d) => d.serialize(),
+            // TODO: replace "".benc_encode() with empty list.
+            Benc::Nil      => "".benc_encode(),
+            Benc::S(ref s) => s.benc_encode(),
+            Benc::I(ref i) => i.benc_encode(),
+            Benc::L(ref l) => l.benc_encode(),
+            Benc::D(ref d) => d.benc_encode(),
         }
     }
 }
@@ -145,6 +145,18 @@ fn u8_to_benc<'a>(v: Vec<u8>) -> Benc<'a> {
     }
 }
 
+pub fn parse_benc<'a>() -> Parser<'a, u8, Benc<'a>> {
+    fn temp1<'b>() -> Parser<'b, u8, Benc<'b>> {
+        parser_lazy_or(parse_bencoded_list, parse_bencoded_dictionary)
+    }
+
+    fn temp2<'b>() -> Parser<'b, u8, Benc<'b>> {
+        parser_lazy_or(parse_string_to_benc, temp1)
+    }
+
+    parser_lazy_or(parse_i64_to_benc, temp2)
+}
+
 fn parse_i64_to_benc<'a>() -> Parser<'a, u8, Benc<'a>> {
     let p = parser_i64();
     let inbetween = parser_lift(Benc::I, p);
@@ -154,18 +166,13 @@ fn parse_i64_to_benc<'a>() -> Parser<'a, u8, Benc<'a>> {
     parser_between(open, close, inbetween)
 }
 
-fn parse_bencoded_string<'a>() -> Parser<'a, u8, Vec<u8>> {
-    fn temp<'a>(n: i64) -> Parser<'a, u8, Vec<u8>> {
-        parser_ignore_first(exactly(b':'),
-                   parser_ntimes(n, any()))
-    }
+fn parse_string_to_benc<'a>() -> Parser<'a, u8, Benc<'a>> {
+    let p = parse_bencoded_string();
 
-    let p = parser_i64();
-
-    parser_bind(p, temp)
+    parser_lift(u8_to_benc, p)
 }
 
-fn parse_bencoded_list<'a>(p: Parser<'a, u8, Benc<'a>>)
+fn parse_bencoded_list<'a>()
                             -> Parser<'a, u8, Benc<'a>> {
     let open = exactly(b'l');
     let close = exactly(b'e');
@@ -177,7 +184,16 @@ fn parse_bencoded_list<'a>(p: Parser<'a, u8, Benc<'a>>)
         }
     };
 
-    let inbetween = parser_lift(temp, parser_many(p));
+    let inbetween = parser_lift(temp, parser_many(parse_benc()));
+
+    parser_between(open, close, inbetween)
+}
+
+fn parse_bencoded_dictionary<'a>() -> Parser<'a, u8, Benc<'a>> {
+    let open = exactly(b'd');
+    let close = exactly(b'e');
+
+    let inbetween = parse_dictionary_pair(parse_benc());
 
     parser_between(open, close, inbetween)
 }
@@ -198,24 +214,19 @@ fn parse_dictionary_pair<'a>(p: Parser<'a, u8, Benc<'a>>)
                 parser_many(parser_and(parse_bencoded_string(), p)))
 }
 
-fn parse_bencoded_dictionary<'a>(p: Parser<'a, u8, Benc<'a>>)
-                                    -> Parser<'a, u8, Benc<'a>> {
-    let open = exactly(b'd');
-    let close = exactly(b'e');
+fn parse_bencoded_string<'a>() -> Parser<'a, u8, Vec<u8>> {
+    fn temp<'a>(n: i64) -> Parser<'a, u8, Vec<u8>> {
+        parser_ignore_first(exactly(b':'),
+                   parser_ntimes(n, any()))
+    }
 
-    let inbetween = parse_dictionary_pair(p);
+    let p = parser_i64();
 
-    parser_between(open, close, inbetween)
-}
-
-fn parse_string_to_benc<'a>() -> Parser<'a, u8, Benc<'a>> {
-    let p = parse_bencoded_string();
-
-    parser_lift(u8_to_benc, p)
+    parser_bind(p, temp)
 }
 
 fn main() {
-    println!("Hello, world!");
+    println!("In progress.");
 }
 
 #[cfg(test)]
@@ -223,80 +234,79 @@ mod tests {
     use super::BEncodable;
     use std::collections::BTreeMap;
     use super::Benc;
-    use super::*;
     use angstrom::base::*;
 
 #[test]
-    fn test_str_serialize() {
-        assert_eq!("0:", "".serialize());
-        assert_eq!("4:test", "test".serialize());
+    fn test_str_benc_encode() {
+        assert_eq!("0:", "".benc_encode());
+        assert_eq!("4:test", "test".benc_encode());
         assert_eq!("15:ohmygodwhoisshe",
-                "ohmygodwhoisshe".serialize());
+                "ohmygodwhoisshe".benc_encode());
     }
 
 #[test]
-    fn test_i64_serialize() {
-        assert_eq!("i0e", 0.serialize());
-        assert_eq!("i1e", 1.serialize());
-        assert_eq!("i1000e", 1000.serialize());
-        assert_eq!("i-1e", (-1).serialize());
+    fn test_i64_benc_encode() {
+        assert_eq!("i0e", 0.benc_encode());
+        assert_eq!("i1e", 1.benc_encode());
+        assert_eq!("i1000e", 1000.benc_encode());
+        assert_eq!("i-1e", (-1).benc_encode());
     }
 
 #[test]
-    fn test_vec_serialize() {
+    fn test_vec_benc_encode() {
         {
             let xs : Vec<i64> = Vec::new();
-            assert_eq!("le", xs.serialize());
+            assert_eq!("le", xs.benc_encode());
         }
         {
             let xs : Vec<i64> = vec![0,1,2,3];
-            assert_eq!("li0ei1ei2ei3ee", xs.serialize());
+            assert_eq!("li0ei1ei2ei3ee", xs.benc_encode());
         }
         {
             let xs = vec!["Hello,".to_string(),
                 " ".to_string(),
                 "World!".to_string()];
-            let xs_serialize = "l6:Hello,1: 6:World!e";
+            let xs_benc_encode = "l6:Hello,1: 6:World!e";
 
-            assert_eq!(xs_serialize, xs.serialize());
+            assert_eq!(xs_benc_encode, xs.benc_encode());
         }
     }
 
 #[test]
-    fn test_array_serialize() {
+    fn test_array_benc_encode() {
         {
             let ar = ["Hello,".to_string(),
                 " ".to_string(),
                 "World!".to_string()];
-            let ar_serialize = "l6:Hello,1: 6:World!e";
+            let ar_benc_encode = "l6:Hello,1: 6:World!e";
 
-            assert_eq!(ar_serialize, ar.serialize());
+            assert_eq!(ar_benc_encode, ar.benc_encode());
         }
     }
 
 #[test]
-    fn test_map_serialize() {
+    fn test_map_benc_encode() {
         {
             let map : BTreeMap<Vec<u8>, i64> = BTreeMap::new();
 
-            assert_eq!(map.serialize(), "de");
+            assert_eq!(map.benc_encode(), "de");
         }
         {
             let mut map : BTreeMap<Vec<u8>, i64> = BTreeMap::new();
             map.insert(b"cow".to_vec(), 0);
             map.insert(b"dus".to_vec(), 10000);
 
-            let map_serialize = "d3:cowi0e3:dusi10000ee";
+            let map_benc_encode = "d3:cowi0e3:dusi10000ee";
 
-            assert_eq!(map.serialize(), map_serialize);
+            assert_eq!(map.benc_encode(), map_benc_encode);
         }
     }
 
 #[test]
-    fn test_benc_serialize() {
+    fn test_benc_benc_encode() {
         {
             let b = Benc::S("Hello".to_string());
-            assert_eq!(b.serialize(), "5:Hello");
+            assert_eq!(b.benc_encode(), "5:Hello");
         }
     }
 
@@ -349,14 +359,14 @@ mod tests {
 
 #[test]
     fn test_parse_string_to_benc() {
+        let parser = super::parse_string_to_benc();
+
         let slice1 = b"5:Hello";
         let result = "Hello";
 
-        let parser = super::parse_string_to_benc();
-
         match parser.parse(slice1) {
             Some(Benc::S(x)) => assert_eq!(x, result),
-            _ => assert!(false)
+                _ => assert!(false)
         }
     }
 
@@ -370,15 +380,15 @@ mod tests {
 
         match parser.parse(slice1) {
             Some(Benc::I(x)) => assert_eq!(x, 0),
-            _ => assert!(false)
+                _ => assert!(false)
         }
         match parser.parse(slice2) {
             Some(Benc::I(x)) => assert_eq!(x, 777),
-            _ => assert!(false)
+                _ => assert!(false)
         }
         match parser.parse(slice3) {
             Some(Benc::I(x)) => assert_eq!(x, 1234567890),
-            _ => assert!(false)
+                _ => assert!(false)
         }
 
         let slice4 = b"ie";
@@ -394,7 +404,7 @@ mod tests {
     fn test_parse_bencoded_list() {
         {
             let parser
-                = super::parse_bencoded_list(super::parse_i64_to_benc());
+                = super::parse_bencoded_list();
 
             let slice1 = b"le";
             let slice2 = b"li0ee";
@@ -420,18 +430,18 @@ mod tests {
         }
         {
             let parser
-                = super::parse_bencoded_list(super::parse_string_to_benc());
+                = super::parse_bencoded_list();
 
             assert!(true);
 
             let slice1 = b"l5:Hello6:World!e";
 
             let result1 = vec![Benc::S("Hello".to_string()),
-                                Benc::S("World!".to_string())];
+                Benc::S("World!".to_string())];
 
             match parser.parse(slice1) {
                 Some(Benc::L(v)) => assert_eq!(v, result1),
-                _ => assert!(false)
+                    _ => assert!(false)
             }
         }
     }
@@ -439,7 +449,7 @@ mod tests {
 #[test]
     fn test_parse_bencoded_dictionary() {
         let parser
-            = super::parse_bencoded_dictionary(super::parse_i64_to_benc());
+            = super::parse_bencoded_dictionary();
 
         let slice1 = b"d1:Ai1e1:Bi2e1:Ci3ee";
 
@@ -450,7 +460,58 @@ mod tests {
 
         match parser.parse(slice1) {
             Some(Benc::D(d)) => assert_eq!(d, result1),
+                _ => assert!(false)
+        }
+    }
+
+#[test]
+    fn test_parse_benc() {
+        let parser = super::parse_benc();
+
+        let slice1 = b"i0e";
+        match parser.parse(slice1) {
+            Some(Benc::I(x)) => assert_eq!(x, 0),
+                _ => assert!(false)
+        }
+
+        let slice2 = b"5:Hello";
+        let result2 = "Hello";
+        match parser.parse(slice2) {
+            Some(Benc::S(x)) => assert_eq!(x, result2),
+                _ => assert!(false)
+        }
+
+        let slice3 = b"li0ei1ee";
+        let result3 = vec![Benc::I(0), Benc::I(1)];
+        match parser.parse(slice3) {
+            Some(Benc::L(v)) => assert_eq!(v, result3),
+                _ => assert!(false)
+        }
+
+        let slice4 = b"d1:Ai1e1:Bi2ee";
+        let mut result4 : BTreeMap<Vec<u8>, Benc> = BTreeMap::new();
+        result4.insert(b"A".to_vec(), Benc::I(1));
+        result4.insert(b"B".to_vec(), Benc::I(2));
+        match parser.parse(slice4) {
+            Some(Benc::D(d)) => assert_eq!(d, result4),
+                _ => assert!(false)
+        }
+
+        let slice5 = b"li0e5:Helloe";
+        let result5 = vec![Benc::I(0), Benc::S("Hello".to_string())];
+        match parser.parse(slice5) {
+            Some(Benc::L(v)) => assert_eq!(v, result5),
             _ => assert!(false)
         }
+
+        let slice6 = b"d1:Ali0ei1ee1:B5:Helloe";
+        let mut result6 : BTreeMap<Vec<u8>, Benc> = BTreeMap::new();
+        result6.insert(b"A".to_vec(), Benc::L(vec![Benc::I(0), Benc::I(1)]));
+        result6.insert(b"B".to_vec(), Benc::S("Hello".to_string()));
+        match parser.parse(slice6) {
+            Some(Benc::D(d)) => assert_eq!(d, result6),
+            _ => assert!(false)
+        }
+
     }
 }
