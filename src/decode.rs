@@ -5,6 +5,10 @@ use std::collections::BTreeMap;
 
 pub type BParser<'a> = Parser<'a, u8, Benc<'a>>;
 
+pub fn decode(slice: &[u8]) -> Option<Benc> {
+    decode_benc().parse(slice)
+}
+
 pub fn decode_benc<'a>() -> BParser<'a> {
     fn temp1<'b>() -> BParser<'b> {
         parser_lazy_or(decode_list, decode_dictionary)
