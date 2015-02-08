@@ -19,11 +19,13 @@ pub enum Benc<'a> {
 pub type BList<'a> = Vec<Benc<'a>>;
 pub type BDict<'a> = BTreeMap<Vec<u8>, Benc<'a>>;
 
+// # Encoding functions
+
 pub trait BEncodable {
     fn benc_encode (&self) -> String;
 }
 
-// String implementations.
+// ## String implementations
 
 impl BEncodable for [u8] {
     fn benc_encode (&self) -> String {
@@ -60,7 +62,7 @@ impl BEncodable for String {
     }
 }
 
-// Integer implementations.
+// ## Integer implementations.
 
 impl BEncodable for i64 {
     fn benc_encode (&self) -> String {
@@ -68,13 +70,7 @@ impl BEncodable for i64 {
     }
 }
 
-// List implementations.
-
-// TODO: find a way to factor duplicate code.
-//       This should be doable with a function that operates on an
-//       Iterator rather than on specific types, but at the moment I can't
-//       find how to specify something like
-//       impl<T: BEncodable> for Iterator<T>
+// ## List implementations.
 
 impl<T: BEncodable> BEncodable for Vec<T> {
     fn benc_encode (&self) -> String {
@@ -104,7 +100,7 @@ impl<T: BEncodable> BEncodable for [T] {
     }
 }
 
-// Dictionary implementations.
+// ## Dictionary implementations
 
 impl<'a, T: BEncodable> BEncodable for BTreeMap<Vec<u8>, T> {
     fn benc_encode(&self) -> String {
@@ -121,7 +117,7 @@ impl<'a, T: BEncodable> BEncodable for BTreeMap<Vec<u8>, T> {
     }
 }
 
-// BEnc implementations
+// ## BEnc implementations
 
 impl<'a> BEncodable for Benc<'a> {
     fn benc_encode(&self) -> String {
@@ -136,28 +132,36 @@ impl<'a> BEncodable for Benc<'a> {
     }
 }
 
-fn u8_to_benc<'a>(v: Vec<u8>) -> Benc<'a> {
-    let s = String::from_utf8(v).unwrap();
+// # Decoding
 
-    match s.len() {
-        0 => Benc::Nil,
-        _ => Benc::S(s)
-    }
-}
-
-pub fn parse_benc<'a>() -> Parser<'a, u8, Benc<'a>> {
+pub fn decode_benc<'a>() -> Parser<'a, u8, Benc<'a>> {
     fn temp1<'b>() -> Parser<'b, u8, Benc<'b>> {
-        parser_lazy_or(parse_bencoded_list, parse_bencoded_dictionary)
+        parser_lazy_or(decode_list, decode_dictionary)
     }
 
     fn temp2<'b>() -> Parser<'b, u8, Benc<'b>> {
-        parser_lazy_or(parse_string_to_benc, temp1)
+        parser_lazy_or(decode_i64, temp1)
     }
 
-    parser_lazy_or(parse_i64_to_benc, temp2)
+    parser_lazy_or(decode_string, temp2)
 }
 
-fn parse_i64_to_benc<'a>() -> Parser<'a, u8, Benc<'a>> {
+fn decode_string<'a>() -> Parser<'a, u8, Benc<'a>> {
+    let p = decode_bencoded_string();
+
+    fn string_or_nil<'a>(v: Vec<u8>) -> Benc<'a> {
+        let s = String::from_utf8(v).unwrap();
+    
+        match s.len() {
+            0 => Benc::Nil,
+            _ => Benc::S(s)
+        }
+    }
+
+    parser_lift(string_or_nil, p)
+}
+
+fn decode_i64<'a>() -> Parser<'a, u8, Benc<'a>> {
     let p = parser_i64();
     let inbetween = parser_lift(Benc::I, p);
     let open = exactly(b'i');
@@ -166,14 +170,7 @@ fn parse_i64_to_benc<'a>() -> Parser<'a, u8, Benc<'a>> {
     parser_between(open, close, inbetween)
 }
 
-fn parse_string_to_benc<'a>() -> Parser<'a, u8, Benc<'a>> {
-    let p = parse_bencoded_string();
-
-    parser_lift(u8_to_benc, p)
-}
-
-fn parse_bencoded_list<'a>()
-                            -> Parser<'a, u8, Benc<'a>> {
+fn decode_list<'a>() -> Parser<'a, u8, Benc<'a>> {
     let open = exactly(b'l');
     let close = exactly(b'e');
 
@@ -184,37 +181,34 @@ fn parse_bencoded_list<'a>()
         }
     };
 
-    let inbetween = parser_lift(temp, parser_many(parse_benc()));
+    let inbetween = parser_lift(temp, parser_many(decode_benc()));
 
     parser_between(open, close, inbetween)
 }
 
-fn parse_bencoded_dictionary<'a>() -> Parser<'a, u8, Benc<'a>> {
+fn decode_dictionary<'a>() -> Parser<'a, u8, Benc<'a>> {
     let open = exactly(b'd');
     let close = exactly(b'e');
 
-    let inbetween = parse_dictionary_pair(parse_benc());
+    fn pair_vect_to_benc<'a>(v: Vec<(Vec<u8>, Benc<'a>)>) -> Benc<'a> {
+        let mut dict : BDict<'a> = BTreeMap::new();
+    
+        for (key, val) in v.into_iter() {
+            dict.insert(key, val);
+        }
+    
+        Benc::D(dict)
+    }
+
+    let inbetween =
+        parser_lift(pair_vect_to_benc,
+                    parser_many(parser_and(decode_bencoded_string(),
+                                           decode_benc())));
 
     parser_between(open, close, inbetween)
 }
 
-fn pair_vect_to_benc<'a>(v: Vec<(Vec<u8>, Benc<'a>)>) -> Benc<'a> {
-    let mut dict : BDict<'a> = BTreeMap::new();
-
-    for (key, val) in v.into_iter() {
-        dict.insert(key, val);
-    }
-
-    Benc::D(dict)
-}
-
-fn parse_dictionary_pair<'a>(p: Parser<'a, u8, Benc<'a>>)
-                                -> Parser<'a, u8, Benc<'a>> {
-    parser_lift(pair_vect_to_benc,
-                parser_many(parser_and(parse_bencoded_string(), p)))
-}
-
-fn parse_bencoded_string<'a>() -> Parser<'a, u8, Vec<u8>> {
+fn decode_bencoded_string<'a>() -> Parser<'a, u8, Vec<u8>> {
     fn temp<'a>(n: i64) -> Parser<'a, u8, Vec<u8>> {
         parser_ignore_first(exactly(b':'),
                    parser_ntimes(n, any()))
@@ -234,7 +228,6 @@ mod tests {
     use super::BEncodable;
     use std::collections::BTreeMap;
     use super::Benc;
-    use angstrom::base::*;
 
 #[test]
     fn test_str_benc_encode() {
@@ -311,9 +304,9 @@ mod tests {
     }
 
 #[test]
-    fn test_parse_bencoded_string() {
+    fn test_decode_bencoded_string() {
         {
-            let parser = super::parse_bencoded_string();
+            let parser = super::decode_bencoded_string();
 
             let slice1 = b"5:Hello";
             let result = b"Hello";
@@ -334,7 +327,7 @@ mod tests {
             assert_eq!(parser.parse(slice5), None);
         }
         {
-            let parser = super::parse_bencoded_string();
+            let parser = super::decode_bencoded_string();
 
             let slice1 = b"1:H";
             let result = b"H";
@@ -345,7 +338,7 @@ mod tests {
             }
         }
         {
-            let parser = super::parse_bencoded_string();
+            let parser = super::decode_bencoded_string();
 
             let slice1 = b"0:";
             let result = b"";
@@ -358,8 +351,8 @@ mod tests {
     }
 
 #[test]
-    fn test_parse_string_to_benc() {
-        let parser = super::parse_string_to_benc();
+    fn test_decode_string() {
+        let parser = super::decode_string();
 
         let slice1 = b"5:Hello";
         let result = "Hello";
@@ -372,7 +365,7 @@ mod tests {
 
 #[test]
     fn test_parse_u8_to_benc() {
-        let parser = super::parse_i64_to_benc();
+        let parser = super::decode_i64();
 
         let slice1 = b"i0e";
         let slice2 = b"i777e";
@@ -401,10 +394,10 @@ mod tests {
     }
 
 #[test]
-    fn test_parse_bencoded_list() {
+    fn test_decode_list() {
         {
             let parser
-                = super::parse_bencoded_list();
+                = super::decode_list();
 
             let slice1 = b"le";
             let slice2 = b"li0ee";
@@ -429,8 +422,7 @@ mod tests {
             // TODO: add failing tests.
         }
         {
-            let parser
-                = super::parse_bencoded_list();
+            let parser = super::decode_list();
 
             assert!(true);
 
@@ -447,9 +439,8 @@ mod tests {
     }
 
 #[test]
-    fn test_parse_bencoded_dictionary() {
-        let parser
-            = super::parse_bencoded_dictionary();
+    fn test_decode_dictionary() {
+        let parser = super::decode_dictionary();
 
         let slice1 = b"d1:Ai1e1:Bi2e1:Ci3ee";
 
@@ -465,8 +456,8 @@ mod tests {
     }
 
 #[test]
-    fn test_parse_benc() {
-        let parser = super::parse_benc();
+    fn test_decode_benc() {
+        let parser = super::decode_benc();
 
         let slice1 = b"i0e";
         match parser.parse(slice1) {
