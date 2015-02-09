@@ -11,14 +11,14 @@ pub fn decode(slice: &[u8]) -> Option<Benc> {
 
 pub fn decode_benc<'a>() -> BParser<'a> {
     fn temp1<'b>() -> BParser<'b> {
-        parser_lazy_or(decode_list, decode_dictionary)
+        lazy_or(decode_list, decode_dictionary)
     }
 
     fn temp2<'b>() -> BParser<'b> {
-        parser_lazy_or(decode_i64, temp1)
+        lazy_or(decode_i64, temp1)
     }
 
-    parser_lazy_or(decode_string, temp2)
+    lazy_or(decode_string, temp2)
 }
 
 fn decode_string<'a>() -> BParser<'a> {
@@ -33,16 +33,16 @@ fn decode_string<'a>() -> BParser<'a> {
         }
     }
 
-    parser_lift(string_or_nil, p)
+    strict_lift(string_or_nil, p)
 }
 
 fn decode_i64<'a>() -> BParser<'a> {
     let open = exactly(b'i');
     let close = exactly(b'e');
 
-    let inbetween = parser_lift(Benc::I, parser_i64());
+    let inbetween = strict_lift(Benc::I, parser_i64());
 
-    parser_between(open, close, inbetween)
+    strict_between(open, close, inbetween)
 }
 
 fn decode_list<'a>() -> BParser<'a> {
@@ -56,9 +56,9 @@ fn decode_list<'a>() -> BParser<'a> {
         }
     };
 
-    let inbetween = parser_lift(list_or_nil, parser_many(decode_benc()));
+    let inbetween = strict_lift(list_or_nil, strict_many(decode_benc()));
 
-    parser_between(open, close, inbetween)
+    strict_between(open, close, inbetween)
 }
 
 fn decode_dictionary<'a>() -> BParser<'a> {
@@ -79,22 +79,22 @@ fn decode_dictionary<'a>() -> BParser<'a> {
     }
 
     let inbetween =
-        parser_lift(pair_vect_to_benc,
-                    parser_many(parser_and(decode_bencoded_string(),
+        strict_lift(pair_vect_to_benc,
+                    strict_many(strict_and(decode_bencoded_string(),
                                            decode_benc())));
 
-    parser_between(open, close, inbetween)
+    strict_between(open, close, inbetween)
 }
 
 fn decode_bencoded_string<'a>() -> Parser<'a, u8, Vec<u8>> {
     fn ignore_length<'b>(n: i64) -> Parser<'b, u8, Vec<u8>> {
-        parser_ignore_first(exactly(b':'),
-                   parser_ntimes(n, any()))
+        strict_ignore_first(exactly(b':'),
+                   strict_ntimes(n, any()))
     }
 
     let p = parser_i64();
 
-    parser_bind(p, ignore_length)
+    strict_bind(p, ignore_length)
 }
 
 #[test]
