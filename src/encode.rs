@@ -3,18 +3,18 @@ use std::collections::BTreeMap;
 #[derive(PartialEq)]
 #[derive(Debug)]
 #[derive(Clone)]
-pub enum Benc<'a> {
+pub enum Benc {
     Nil,
     S (String),
     I (i64),
-    L (BList<'a>),
+    L (BList),
     // TODO: These should be sorted by binary values of the keys. For now,
     //       it is unsorted.
-    D (BDict<'a>)
+    D (BDict)
 }
 
-pub type BList<'a> = Vec<Benc<'a>>;
-pub type BDict<'a> = BTreeMap<Vec<u8>, Benc<'a>>;
+pub type BList = Vec<Benc>;
+pub type BDict = BTreeMap<Vec<u8>, Benc>;
 
 pub trait BEncodable {
     fn benc_encode (&self) -> String;
@@ -114,7 +114,7 @@ impl<'a, T: BEncodable> BEncodable for BTreeMap<Vec<u8>, T> {
 
 // ## BEnc implementations
 
-impl<'a> BEncodable for Benc<'a> {
+impl BEncodable for Benc {
     fn benc_encode(&self) -> String {
         match *self {
             // TODO: replace "".benc_encode() with empty list.

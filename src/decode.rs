@@ -3,7 +3,7 @@ use angstrom::base::*;
 use angstrom::bytes::*;
 use std::collections::BTreeMap;
 
-pub type BParser<'a> = Parser<'a, u8, Benc<'a>>;
+pub type BParser<'a> = Parser<'a, u8, Benc>;
 
 pub fn decode(slice: &[u8]) -> Option<Benc> {
     decode_benc().parse(slice)
@@ -24,7 +24,7 @@ pub fn decode_benc<'a>() -> BParser<'a> {
 fn decode_string<'a>() -> BParser<'a> {
     let p = decode_bencoded_string();
 
-    fn string_or_nil<'a>(v: Vec<u8>) -> Benc<'a> {
+    fn string_or_nil<'a>(v: Vec<u8>) -> Benc {
         let s = String::from_utf8(v).unwrap();
     
         match s.len() {
@@ -65,8 +65,8 @@ fn decode_dictionary<'a>() -> BParser<'a> {
     let open = exactly(b'd');
     let close = exactly(b'e');
 
-    fn pair_vect_to_benc<'a>(v: Vec<(Vec<u8>, Benc<'a>)>) -> Benc<'a> {
-        let mut dict : BDict<'a> = BTreeMap::new();
+    fn pair_vect_to_benc<'a>(v: Vec<(Vec<u8>, Benc)>) -> Benc {
+        let mut dict : BDict = BTreeMap::new();
     
         for (key, val) in v.into_iter() {
             dict.insert(key, val);
