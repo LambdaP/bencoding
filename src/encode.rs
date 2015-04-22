@@ -28,15 +28,6 @@ impl BEncodable for [u8] {
     }
 }
 
-impl BEncodable for Vec<u8> {
-    fn benc_encode (&self) -> String {
-        // String::from_ut8 takes its argument by value and using it here
-        // would create ownership problems. This is the stupid way to do
-        // it (and there certainly is a more idiomatic way to do it).
-        self.as_slice().benc_encode()
-    }
-}
-
 impl BEncodable for str {
     fn benc_encode (&self) -> String {
         let l1 = self.len();
@@ -44,7 +35,7 @@ impl BEncodable for str {
         let l2 = tmp.len();
 
         let mut s = String::with_capacity(l1 + l2);
-        s.push_str(tmp.as_slice());
+        s.push_str(&tmp);
         s.push_str(self);
 
         return s;
@@ -53,7 +44,7 @@ impl BEncodable for str {
 
 impl BEncodable for String {
     fn benc_encode (&self) -> String {
-        self.as_slice().benc_encode()
+        self.as_str().benc_encode()
     }
 }
 
@@ -72,7 +63,7 @@ impl<T: BEncodable> BEncodable for Vec<T> {
         let mut tmp = String::from_str("l");
 
         for b in self.iter() {
-            tmp.push_str(b.benc_encode().as_slice());
+            tmp.push_str(&b.benc_encode());
         }
 
         tmp.push_str("e");
@@ -86,7 +77,7 @@ impl<T: BEncodable> BEncodable for [T] {
         let mut tmp = String::from_str("l");
 
         for b in self.iter() {
-            tmp.push_str(b.benc_encode().as_slice());
+            tmp.push_str(&b.benc_encode());
         }
 
         tmp.push_str("e");
@@ -102,8 +93,8 @@ impl<'a, T: BEncodable> BEncodable for BTreeMap<Vec<u8>, T> {
         let mut tmp = String::from_str("d");
 
         for (key, value) in self.iter() {
-            tmp.push_str(key.benc_encode().as_slice());
-            tmp.push_str(value.benc_encode().as_slice());
+            tmp.push_str(&key.benc_encode());
+            tmp.push_str(&value.benc_encode());
         }
 
         tmp.push_str("e");
